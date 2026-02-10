@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Classifier - Pets vs Non-Pets</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>AI Image Classifier</h1>
+            <p>Classify images into <strong>Pets</strong> or <strong>Non-Pets</strong> using deep learning.</p>
+        </header>
+
+        <main>
+            <div class="upload-section">
+                <div class="drop-zone" id="drop-zone">
+                    <span class="drop-zone__prompt">Drop image here or click to upload</span>
+                    <input type="file" name="file" id="file-input" class="drop-zone__input" accept="image/*">
+                </div>
+                <button id="predict-btn" class="btn primary">Classify Image</button>
+            </div>
+
+            <div id="result-section" class="result-section hidden">
+                <h2>Result</h2>
+                <div class="result-card">
+                    <img id="preview-img" src="" alt="Uploaded Image">
+                    <div class="result-info">
+                        <p>Category: <span id="res-label" class="badge"></span></p>
+                        <p>Identified As: <span id="res-specific" class="specific-name"></span></p>
+                        <p>Diet Type: <span id="res-diet" class="info-text"></span></p>
+                        <p>Habitat: <span id="res-habitat" class="info-text"></span></p>
+                        <p>Confidence: <span id="res-confidence"></span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="loader" class="loader hidden">
+                <div class="spinner"></div>
+                <p>Analyzing image...</p>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by PyTorch & MobileNetV2</p>
+        </footer>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const dropZone = document.getElementById('drop-zone');
+        const predictBtn = document.getElementById('predict-btn');
+        const resultSection = document.getElementById('result-section');
+        const loader = document.getElementById('loader');
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) {
+                updateThumbnail(dropZone, fileInput.files[0]);
+            }
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drop-zone--over');
+        });
+
+        ['dragleave', 'dragend'].forEach(type => {
+            dropZone.addEventListener(type, () => {
+                dropZone.classList.remove('drop-zone--over');
+            });
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                updateThumbnail(dropZone, e.dataTransfer.files[0]);
+            }
+            dropZone.classList.remove('drop-zone--over');
+        });
+
+        function updateThumbnail(dropZoneElement, file) {
+            let thumbnailElement = dropZoneElement.querySelector('.drop-zone__thumb');
+            if (dropZoneElement.querySelector('.drop-zone__prompt')) {
+                dropZoneElement.querySelector('.drop-zone__prompt').remove();
+            }
+            if (!thumbnailElement) {
+                thumbnailElement = document.createElement('div');
+                thumbnailElement.classList.add('drop-zone__thumb');
+                dropZoneElement.appendChild(thumbnailElement);
+            }
+            thumbnailElement.dataset.label = file.name;
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    thumbnailElement.style.backgroundImage = `url('${reader.result}')`;
+                };
+            }
+        }
+
+        predictBtn.addEventListener('click', async () => {
+            if (!fileInput.files.length) {
+                alert('Please select an image first.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            loader.classList.remove('hidden');
+            resultSection.classList.add('hidden');
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    document.getElementById('res-label').textContent = data.class;
+                    document.getElementById('res-specific').textContent = data.specific_name;
+                    document.getElementById('res-diet').textContent = data.diet;
+                    document.getElementById('res-habitat').textContent = data.habitat;
+                    document.getElementById('res-confidence').textContent = data.confidence;
+                    document.getElementById('preview-img').src = data.image_url + '?' + new Date().getTime();
+                    resultSection.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred during classification.');
+            } finally {
+                loader.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+
+</html>

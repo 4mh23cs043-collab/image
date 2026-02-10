@@ -1,0 +1,16 @@
+# Dataset
+Final Random Image Dataset/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Flask uploads
+static/uploads/*
+!static/uploads/.gitkeep
+
+# Model weights
+# classifier_model.pth # Keeping this as requested by "deploy the model"
