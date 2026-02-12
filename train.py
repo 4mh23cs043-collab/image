@@ -1,9 +1,13 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torchvision import datasets, models, transforms
-from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
+import torch # type: ignore
+import torch.nn as nn # type: ignore
+import torch.optim as optim # type: ignore
+from torchvision import datasets, models, transforms # type: ignore
+from torch.utils.data import DataLoader # type: ignore
+import matplotlib # type: ignore
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt # type: ignore
+
+from classifier_module import get_model # type: ignore
 import os
 
 # Configuration
@@ -25,6 +29,10 @@ def train_model():
     ])
 
     # Load dataset
+    if not os.path.exists(DATASET_PATH):
+        print(f"Error: Dataset path '{DATASET_PATH}' not found.")
+        return
+
     full_dataset = datasets.ImageFolder(DATASET_PATH, transform=transform)
     
     # Use a subset for faster demonstration
@@ -43,23 +51,10 @@ def train_model():
     print(f"Classes: {full_dataset.classes}")
     num_classes = len(full_dataset.classes)
 
-    # Build Model (Transfer Learning with MobileNetV2)
+    # Build Model
     print("Building model (PyTorch MobileNetV2)...")
-    # Use weights instead of deprecated pretrained
     weights = models.MobileNet_V2_Weights.DEFAULT
-    model = models.mobilenet_v2(weights=weights)
-    
-    # Freeze base model
-    for param in model.parameters():
-        param.requires_grad = False
-    
-    # Replace classifier
-    model.classifier[1] = nn.Sequential(
-        nn.Linear(model.last_channel, 128),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(128, num_classes)
-    )
+    model = get_model(num_classes, weights=weights)
 
     device = torch.device("cpu") # Explicitly use CPU for stability in this environment
     model.to(device)
@@ -69,8 +64,12 @@ def train_model():
 
     # Training Loop
     print(f"Starting training on {device}...")
-    train_acc_history = []
-    val_acc_history = []
+    history = {
+        'train_acc': [],
+        'val_acc': [],
+        'train_loss': [],
+        'val_loss': []
+    }
 
     for epoch in range(EPOCHS):
         model.train()
@@ -97,23 +96,32 @@ def train_model():
                 print(f"  Step [{i+1}/{len(train_loader)}], Loss: {running_loss/(i+1):.4f}")
 
         train_acc = 100. * correct / total
-        train_acc_history.append(train_acc)
+        train_loss = running_loss / len(train_loader)
+        history['train_acc'].append(train_acc) # type: ignore
+        history['train_loss'].append(train_loss) # type: ignore
 
         # Validation
         model.eval()
         val_correct = 0
         val_total = 0
+        val_running_loss = 0.0
         with torch.no_grad():
             for inputs, labels in val_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                val_running_loss += loss.item()
+                
                 _, predicted = outputs.max(1)
                 val_total += labels.size(0)
                 val_correct += predicted.eq(labels).sum().item()
         
         val_acc = 100. * val_correct / val_total
-        val_acc_history.append(val_acc)
-        print(f"Epoch {epoch+1} Summary: Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%")
+        val_loss = val_running_loss / len(val_loader)
+        history['val_acc'].append(val_acc) # type: ignore
+        history['val_loss'].append(val_loss) # type: ignore
+        
+        print(f"Epoch {epoch+1} Summary: Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%, Loss: {train_loss:.4f}")
 
     # Save Model
     print(f"Saving model to {MODEL_SAVE_PATH}...")
@@ -122,6 +130,36 @@ def train_model():
     # Save classes mapping
     with open("classes.txt", "w") as f:
         f.write("\n".join(full_dataset.classes))
+
+    # Plot and save history
+    print("Generating training history plots...")
+    epochs_range = range(1, EPOCHS + 1)
+    
+    plt.figure(figsize=(12, 5))
+    
+    # Accuracy Plot
+    plt.subplot(1, 2, 1)
+    plt.plot(list(epochs_range), history['train_acc'], label='Train Acc', marker='o') # type: ignore
+    plt.plot(list(epochs_range), history['val_acc'], label='Val Acc', marker='o') # type: ignore
+    plt.title('Accuracy History')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+
+    # Loss Plot
+    plt.subplot(1, 2, 2)
+    plt.plot(list(epochs_range), history['train_loss'], label='Train Loss', marker='o', color='red') # type: ignore
+    plt.plot(list(epochs_range), history['val_loss'], label='Val Loss', marker='o', color='orange') # type: ignore
+    plt.title('Loss History')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+
+    plt.tight_layout()
+    plt.savefig('training_history.png')
+    print("Training history plot saved as training_history.png")
 
     print("Training task complete.")
 

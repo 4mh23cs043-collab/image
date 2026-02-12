@@ -5,9 +5,14 @@ from torchvision import models, transforms  # type: ignore
 from PIL import Image  # type: ignore
 import torch.nn as nn  # type: ignore
 
+from classifier_module import get_model # type: ignore
+
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Device Configuration
+device = torch.device("cpu")
 
 # Load classes
 CLASSES = []
@@ -17,15 +22,32 @@ if os.path.exists("classes.txt"):
 else:
     CLASSES = ['Non-Pets', 'Pets'] # Default fallback
 
-# Load Models
+# Initialize and Load Models
 MODEL_PATH = "classifier_model.pth"
-device = torch.device("cpu")
 
-# Load weights for specific identification
+# 1. Specific Identification Model (ImageNet)
 weights = models.MobileNet_V2_Weights.DEFAULT
 specific_model = models.mobilenet_v2(weights=weights)
 specific_model.eval()
+specific_model.to(device)
 CATEGORIES = weights.meta["categories"]
+
+# 2. Custom Broad Classifier Model (Pets vs Non-Pets)
+def load_custom_model():
+    model = get_model(len(CLASSES), weights=None)
+    if os.path.exists(MODEL_PATH):
+        try:
+            model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+            print(f"Loaded custom model weights from {MODEL_PATH}")
+        except Exception as e:
+            print(f"Error loading model weights: {e}")
+    else:
+        print(f"Warning: {MODEL_PATH} not found. Using uninitialized classifier.")
+    model.eval()
+    model.to(device)
+    return model
+
+custom_model = load_custom_model()
 
 # Animal metadata: diet type and habitat
 ANIMAL_METADATA = {
@@ -131,19 +153,6 @@ def get_animal_info(animal_name):
     # Default fallback
     return {'diet': 'Unknown', 'habitat': 'Unknown'}
 
-def get_custom_model():
-    model = models.mobilenet_v2(pretrained=False)
-    num_classes = len(CLASSES)
-    model.classifier[1] = nn.Sequential(
-        nn.Linear(model.last_channel, 128),
-        nn.ReLU(),
-        nn.Dropout(0.5),
-        nn.Linear(128, num_classes)
-    )
-    if os.path.exists(MODEL_PATH):
-        model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-    model.eval()
-    return model
 
 # Image transforms
 transform = transforms.Compose([
@@ -188,7 +197,6 @@ def predict():
             specific_name = specific_name_raw.replace('_', ' ').title()
 
             # 2. Broad Classification (Pets vs Non-Pets)
-            custom_model = get_custom_model()
             with torch.no_grad():
                 outputs = custom_model(img_tensor)
                 _, predicted = outputs.max(1)
